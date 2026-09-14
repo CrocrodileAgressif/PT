@@ -10,6 +10,67 @@ const PAGES_URL = `https://${USERNAME}.github.io/${REPO_NAME}`;
 // LOAD FILES FROM GITHUB REPOSITORY
 // ========================================
 
+// File in the repository root containing relative paths to ignore.
+// One path per line. Empty lines and lines beginning with # are ignored.
+//
+// Examples:
+// MATHS/Cours
+// MATHS/Cours/old.pdf
+// README.md
+//
+// A path matching a file is ignored.
+// A path matching a directory also ignores everything inside it.
+const IGNORE_FILE = ".ignore";
+
+async function getIgnorePaths() {
+	const url = `https://raw.githubusercontent.com/${USERNAME}/${REPO_NAME}/HEAD/${IGNORE_FILE}`;
+
+	try {
+		const response = await fetch(url);
+
+		// The ignore file is optional.
+		// If it does not exist, simply ignore nothing.
+		if (!response.ok) {
+			if (response.status === 404) {
+				return [];
+			}
+
+			throw new Error("Could not load the ignore file.");
+		}
+
+		const content = await response.text();
+
+		return content
+			.split(/\r?\n/)
+			.map((line) => line.trim())
+			.filter((line) => line && !line.startsWith("#"))
+			.map((path) => path.replace(/^\.\/+/, "").replace(/\/+$/, ""));
+	} catch (error) {
+		console.warn(`Could not read ${IGNORE_FILE}.`, error);
+		return [];
+	}
+}
+
+function isIgnoredPath(filePath, ignorePaths) {
+	const normalizedPath = filePath
+		.replace(/^\.\/+/, "")
+		.replace(/^\/+|\/+$/g, "");
+
+	return ignorePaths.some((ignorePath) => {
+		if (!ignorePath) {
+			return false;
+		}
+
+		// Exact match = ignored file or directory itself.
+		if (normalizedPath === ignorePath) {
+			return true;
+		}
+
+		// Prefix match = everything inside an ignored directory.
+		return normalizedPath.startsWith(ignorePath + "/");
+	});
+}
+
 async function getRepositoryFiles() {
 	const response = await fetch(
 		`https://api.github.com/repos/${USERNAME}/${REPO_NAME}/git/trees/HEAD?recursive=1`,
@@ -21,7 +82,12 @@ async function getRepositoryFiles() {
 
 	const data = await response.json();
 
-	return data.tree.filter((item) => item.type === "blob");
+	// Read the ignore file before building the tree.
+	const ignorePaths = await getIgnorePaths();
+
+	return data.tree
+		.filter((item) => item.type === "blob")
+		.filter((item) => !isIgnoredPath(item.path, ignorePaths));
 }
 
 // ========================================
@@ -135,95 +201,90 @@ function createTreeElement(tree, isRoot = false) {
 	// FILES
 	// ========================================
 
-	// Root files stay hidden.
-	if (!isRoot) {
-		tree.files
-			.sort((a, b) => a.name.localeCompare(b.name))
-			.forEach((file) => {
-				const fileElement = document.createElement("div");
+	// Root files are displayed too.
+	tree.files
+		.sort((a, b) => a.name.localeCompare(b.name))
+		.forEach((file) => {
+			const fileElement = document.createElement("div");
 
-				fileElement.className = "file";
+			fileElement.className = "file";
 
-				// File name
-				const fileName = document.createElement("span");
+			// File name
+			const fileName = document.createElement("span");
 
-				fileName.className = "file-name";
+			fileName.className = "file-name";
 
-				fileName.textContent = "📄 " + file.name;
+			fileName.textContent = "📄 " + file.name;
 
-				// Buttons container
-				const buttons = document.createElement("div");
+			// Buttons container
+			const buttons = document.createElement("div");
 
-				buttons.className = "file-buttons";
+			buttons.className = "file-buttons";
 
-				// ========================================
-				// OPEN URL
-				// ========================================
+			// ========================================
+			// OPEN URL
+			// ========================================
 
-				// This uses GitHub Pages
-				// Example:
-				// https://tonioliii.github.io/PT/MATHS/Cours/ch1(an1).pdf
+			// This uses GitHub Pages
+			// Example:
+			// https://tonioliii.github.io/PT/MATHS/Cours/ch1(an1).pdf
 
-				const openURL = `${PAGES_URL}/${file.path
-					.split("/")
-					.map((part) => encodeURIComponent(part))
-					.join("/")}`;
+			const openURL = `${PAGES_URL}/${file.path
+				.split("/")
+				.map((part) => encodeURIComponent(part))
+				.join("/")}`;
 
-				// ========================================
-				// OLD DOWNLOAD URL
-				// ========================================
+			// ========================================
+			// DOWNLOAD URL
+			// ========================================
 
-				// This uses raw.githubusercontent.com
-				// which was working correctly for downloads.
+			const downloadURL = `https://raw.githubusercontent.com/${USERNAME}/${REPO_NAME}/HEAD/${file.path}`;
 
-				const downloadURL = `https://raw.githubusercontent.com/${USERNAME}/${REPO_NAME}/HEAD/${file.path}`;
+			// ========================================
+			// OPEN BUTTON
+			// ========================================
 
-				// ========================================
-				// OPEN BUTTON
-				// ========================================
+			const openButton = document.createElement("a");
 
-				const openButton = document.createElement("a");
+			openButton.className = "open";
 
-				openButton.className = "open";
+			openButton.textContent = "Open";
 
-				openButton.textContent = "Open";
+			openButton.href = openURL;
 
-				openButton.href = openURL;
+			openButton.target = "_blank";
 
-				openButton.target = "_blank";
+			openButton.rel = "noopener noreferrer";
 
-				openButton.rel = "noopener noreferrer";
+			// ========================================
+			// DOWNLOAD BUTTON
+			// ========================================
 
-				// ========================================
-				// DOWNLOAD BUTTON
-				// ========================================
+			const downloadButton = document.createElement("a");
 
-				const downloadButton = document.createElement("a");
+			downloadButton.className = "download";
 
-				downloadButton.className = "download";
+			downloadButton.textContent = "Download";
 
-				downloadButton.textContent = "Download";
+			downloadButton.href = downloadURL;
 
-				downloadButton.href = downloadURL;
+			downloadButton.download = file.name;
 
-				downloadButton.download = file.name;
+			downloadButton.rel = "noopener noreferrer";
 
-				downloadButton.rel = "noopener noreferrer";
+			// ========================================
+			// ADD BUTTONS
+			// ========================================
 
-				// ========================================
-				// ADD BUTTONS
-				// ========================================
+			buttons.appendChild(openButton);
+			buttons.appendChild(downloadButton);
 
-				buttons.appendChild(openButton);
-				buttons.appendChild(downloadButton);
+			// Add file name + buttons
+			fileElement.appendChild(fileName);
+			fileElement.appendChild(buttons);
 
-				// Add file name + buttons
-				fileElement.appendChild(fileName);
-				fileElement.appendChild(buttons);
-
-				container.appendChild(fileElement);
-			});
-	}
+			container.appendChild(fileElement);
+		});
 
 	return container;
 }
@@ -249,8 +310,7 @@ async function loadRepository() {
 
 		reposContainer.appendChild(repositoryTitle);
 
-		// true = root
-		// Root files remain hidden
+		// Root files are displayed too.
 		const treeElement = createTreeElement(tree, true);
 
 		reposContainer.appendChild(treeElement);
