@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Discord Webhook Sender</title>
+
+		<style>
+			* {
+				box-sizing: border-box;
+			}
+
+			body {
+				margin: 0;
+				min-height: 100vh;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				padding: 24px;
+				background: #111827;
+				color: #f9fafb;
+				font-family: Arial, Helvetica, sans-serif;
+			}
+
+			.container {
+				width: 100%;
+				max-width: 680px;
+				background: #1f2937;
+				border: 1px solid #374151;
+				border-radius: 16px;
+				padding: 28px;
+				box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+			}
+
+			h1 {
+				margin: 0 0 8px;
+				font-size: 25px;
+			}
+
+			.description {
+				margin: 0 0 24px;
+				color: #9ca3af;
+			}
+
+			textarea {
+				width: 100%;
+				min-height: 150px;
+				resize: vertical;
+				padding: 14px;
+				border-radius: 10px;
+				border: 1px solid #4b5563;
+				background: #111827;
+				color: #fff;
+				font: inherit;
+				outline: none;
+			}
+
+			textarea:focus {
+				border-color: #6366f1;
+			}
+
+			.drop-zone {
+				margin-top: 16px;
+				padding: 32px 20px;
+				text-align: center;
+				border: 2px dashed #4b5563;
+				border-radius: 12px;
+				background: #172033;
+				cursor: pointer;
+				transition: 0.2s;
+			}
+
+			.drop-zone:hover,
+			.drop-zone.dragover {
+				border-color: #6366f1;
+				background: #202b45;
+			}
+
+			.drop-zone strong {
+				display: block;
+				margin-bottom: 8px;
+			}
+
+			.drop-zone span {
+				color: #9ca3af;
+				font-size: 14px;
+			}
+
+			#fileInput {
+				display: none;
+			}
+
+			.file-list {
+				margin-top: 14px;
+			}
+
+			.file-item {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 12px;
+				padding: 10px 12px;
+				margin-top: 8px;
+				background: #111827;
+				border: 1px solid #374151;
+				border-radius: 8px;
+			}
+
+			.file-name {
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+
+			.file-size {
+				color: #9ca3af;
+				font-size: 13px;
+				white-space: nowrap;
+			}
+
+			.remove-file {
+				border: 0;
+				background: transparent;
+				color: #f87171;
+				cursor: pointer;
+				font-size: 18px;
+			}
+
+			button {
+				width: 100%;
+				margin-top: 20px;
+				padding: 13px 18px;
+				border: 0;
+				border-radius: 9px;
+				background: #5865f2;
+				color: white;
+				font: inherit;
+				font-weight: 600;
+				cursor: pointer;
+				transition: 0.2s;
+			}
+
+			button:hover {
+				background: #4752c4;
+			}
+
+			button:disabled {
+				opacity: 0.55;
+				cursor: not-allowed;
+			}
+
+			.status {
+				display: none;
+				margin-top: 18px;
+				padding: 12px 14px;
+				border-radius: 9px;
+				font-size: 14px;
+			}
+
+			.status.info {
+				display: block;
+				background: #172554;
+				color: #bfdbfe;
+			}
+
+			.status.success {
+				display: block;
+				background: #052e16;
+				color: #86efac;
+			}
+
+			.status.error {
+				display: block;
+				background: #450a0a;
+				color: #fca5a5;
+			}
+		</style>
+	</head>
+
+	<body>
+		<div class="container">
+			<h1>Send a Message</h1>
+			<p class="description">
+				Enter a message or attach files and send them through the configured
+				Discord webhook.
+			</p>
+
+			<textarea
+				id="message"
+				maxlength="2000"
+				placeholder="Write your message here..."
+			></textarea>
+
+			<div id="dropZone" class="drop-zone">
+				<strong>Drag & drop files here</strong>
+				<span>or click to choose files</span>
+			</div>
+
+			<input id="fileInput" type="file" multiple />
+
+			<div id="fileList" class="file-list"></div>
+
+			<button id="sendButton">Send</button>
+
+			<div id="status" class="status"></div>
+		</div>
+
+		<script>
+			/*
+			 * ============================================================
+			 * DISCORD WEBHOOK
+			 * ============================================================
+			 *
+			 * Replace the value below with your Base64-encoded webhook URL.
+			 *
+			 * Example:
+			 * btoa("https://discord.com/api/webhooks/...")
+			 *
+			 * IMPORTANT:
+			 * Base64 is NOT encryption. Anyone who can access this page can
+			 * inspect the JavaScript and recover the webhook URL.
+			 */
+			const WB =
+				"aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTU0OTQ1ODE3NTQ1ODE0ODQwOS9zcmE3MzVEUG9NenE0ODl0X1VCR0Y3X3kxTUhoTUJWUGtOMXZ4ckNCMFVaZ3F2eWRlRUc5S2FNQl9BbTRnWnpuUGFtbQ==";
+
+			function getWebhookUrl() {
+				try {
+					return atob(WB);
+				} catch (error) {
+					throw new Error("Invalid Base64 webhook configuration.");
+				}
+			}
+
+			// ------------------------------------------------------------
+			// DOM elements
+			// ------------------------------------------------------------
+
+			const messageInput = document.getElementById("message");
+			const dropZone = document.getElementById("dropZone");
+			const fileInput = document.getElementById("fileInput");
+			const fileList = document.getElementById("fileList");
+			const sendButton = document.getElementById("sendButton");
+			const statusBox = document.getElementById("status");
+
+			let selectedFiles = [];
+
+			// ------------------------------------------------------------
+			// File handling
+			// ------------------------------------------------------------
+
+			function addFiles(files) {
+				for (const file of files) {
+					// Avoid duplicate files.
+					const duplicate = selectedFiles.some(
+						(existing) =>
+							existing.name === file.name &&
+							existing.size === file.size &&
+							existing.lastModified === file.lastModified,
+					);
+
+					if (!duplicate) {
+						selectedFiles.push(file);
+					}
+				}
+
+				renderFiles();
+			}
+
+			function removeFile(index) {
+				selectedFiles.splice(index, 1);
+				renderFiles();
+			}
+
+			function formatFileSize(bytes) {
+				if (bytes < 1024) {
+					return `${bytes} B`;
+				}
+
+				if (bytes < 1024 * 1024) {
+					return `${(bytes / 1024).toFixed(1)} KB`;
+				}
+
+				if (bytes < 1024 * 1024 * 1024) {
+					return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+				}
+
+				return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+			}
+
+			function renderFiles() {
+				fileList.innerHTML = "";
+
+				selectedFiles.forEach((file, index) => {
+					const item = document.createElement("div");
+					item.className = "file-item";
+
+					item.innerHTML = `
+                <span class="file-name">${escapeHtml(file.name)}</span>
+                <span class="file-size">${formatFileSize(file.size)}</span>
+                <button
+                    class="remove-file"
+                    type="button"
+                    title="Remove file"
+                    style="width:auto;margin:0;padding:0"
+                    data-index="${index}"
+                >×</button>
+            `;
+
+					fileList.appendChild(item);
+				});
+
+				document.querySelectorAll(".remove-file").forEach((button) => {
+					button.addEventListener("click", () => {
+						removeFile(Number(button.dataset.index));
+					});
+				});
+			}
+
+			function escapeHtml(value) {
+				const div = document.createElement("div");
+				div.textContent = value;
+				return div.innerHTML;
+			}
+
+			// ------------------------------------------------------------
+			// Drag & drop
+			// ------------------------------------------------------------
+
+			dropZone.addEventListener("click", () => {
+				fileInput.click();
+			});
+
+			fileInput.addEventListener("change", (event) => {
+				addFiles(event.target.files);
+
+				// Allows selecting the same file again later.
+				fileInput.value = "";
+			});
+
+			dropZone.addEventListener("dragover", (event) => {
+				event.preventDefault();
+				dropZone.classList.add("dragover");
+			});
+
+			dropZone.addEventListener("dragleave", () => {
+				dropZone.classList.remove("dragover");
+			});
+
+			dropZone.addEventListener("drop", (event) => {
+				event.preventDefault();
+				dropZone.classList.remove("dragover");
+
+				if (event.dataTransfer.files.length) {
+					addFiles(event.dataTransfer.files);
+				}
+			});
+
+			// ------------------------------------------------------------
+			// Status
+			// ------------------------------------------------------------
+
+			function setStatus(message, type) {
+				statusBox.textContent = message;
+				statusBox.className = `status ${type}`;
+			}
+
+			// ------------------------------------------------------------
+			// Send to Discord
+			// ------------------------------------------------------------
+
+			async function sendToDiscord() {
+				const message = messageInput.value.trim();
+
+				if (!message && selectedFiles.length === 0) {
+					setStatus(
+						"Please enter a message or select at least one file.",
+						"error",
+					);
+					return;
+				}
+
+				sendButton.disabled = true;
+				setStatus("Sending...", "info");
+
+				try {
+					const webhookUrl = getWebhookUrl();
+
+					/*
+					 * Discord webhooks accept multipart/form-data when files
+					 * are included.
+					 */
+					const formData = new FormData();
+
+					if (message) {
+						formData.append(
+							"payload_json",
+							JSON.stringify({
+								content: message,
+							}),
+						);
+					} else {
+						formData.append(
+							"payload_json",
+							JSON.stringify({
+								content: "",
+							}),
+						);
+					}
+
+					selectedFiles.forEach((file, index) => {
+						formData.append(`files[${index}]`, file, file.name);
+					});
+
+					const response = await fetch(webhookUrl, {
+						method: "POST",
+						body: formData,
+					});
+
+					if (!response.ok) {
+						let details = "";
+
+						try {
+							details = await response.text();
+						} catch (_) {
+							// Ignore response parsing errors.
+						}
+
+						throw new Error(
+							`Discord returned HTTP ${response.status}` +
+								(details ? `: ${details}` : ""),
+						);
+					}
+
+					setStatus("Message sent successfully.", "success");
+
+					messageInput.value = "";
+					selectedFiles = [];
+					renderFiles();
+				} catch (error) {
+					console.error(error);
+
+					setStatus(`Failed to send: ${error.message}`, "error");
+				} finally {
+					sendButton.disabled = false;
+				}
+			}
+
+			sendButton.addEventListener("click", sendToDiscord);
+		</script>
+	</body>
+</html>
