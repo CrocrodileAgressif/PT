@@ -1,5 +1,4 @@
 .ignore
 index.html
-script.js
-style.css
+app/
 Push.bat
